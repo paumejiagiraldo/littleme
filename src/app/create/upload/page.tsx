@@ -21,6 +21,7 @@ export default function UploadPage() {
     { role: 'parent2', label: 'Parent 2 (optional)', required: false, file: null, preview: null },
   ]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleFileChange = useCallback((index: number, file: File | null) => {
     setSlots((prev) => {
@@ -32,6 +33,7 @@ export default function UploadPage() {
       };
       return updated;
     });
+    setError(null);
   }, []);
 
   const handleContinue = async () => {
@@ -39,30 +41,48 @@ export default function UploadPage() {
     if (!childSlot?.file) return;
 
     setIsAnalyzing(true);
+    setError(null);
 
     // Create or get session
     let session = getSession();
     if (!session) session = createSession();
 
-    // For MVP: we'll analyze photos via API route
-    // For now, create placeholder traits and move forward
-    const members = slots
-      .filter((s) => s.file)
-      .map((s) => ({
-        role: s.role as 'child' | 'parent1' | 'parent2',
-        name: '',
-        photoUrl: s.preview || '',
-        traits: {
-          skinTone: '',
-          hairColor: '',
-          hairStyle: '',
-          eyeColor: '',
-        },
-      }));
+    try {
+      // Analyze each uploaded photo via Gemini Vision
+      const slotsWithFiles = slots.filter((s) => s.file);
+      const members = await Promise.all(
+        slotsWithFiles.map(async (slot) => {
+          const formData = new FormData();
+          formData.append('photo', slot.file!);
+          formData.append('role', slot.role);
 
-    updateSession({ familyMembers: members, step: 'confirm' });
-    setIsAnalyzing(false);
-    router.push('/create/confirm');
+          const res = await fetch('/api/analyze-photo', {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (!res.ok) {
+            throw new Error(`Failed to analyze ${slot.label} photo`);
+          }
+
+          const data = await res.json();
+          return {
+            role: slot.role as 'child' | 'parent1' | 'parent2',
+            name: '',
+            photoUrl: slot.preview || '',
+            traits: data.traits,
+          };
+        })
+      );
+
+      updateSession({ familyMembers: members, step: 'confirm' });
+      router.push('/create/confirm');
+    } catch (err) {
+      console.error('Photo analysis error:', err);
+      setError('Something went wrong analyzing the photos. Please try again.');
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   return (
@@ -76,6 +96,12 @@ export default function UploadPage() {
           deleted right after — we never store them.
         </p>
 
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+            {error}
+          </div>
+        )}
+
         <div className="space-y-6">
           {slots.map((slot, index) => (
             <div
@@ -84,6 +110,7 @@ export default function UploadPage() {
             >
               {slot.preview ? (
                 <div className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={slot.preview}
                     alt={slot.label}
@@ -122,7 +149,17 @@ export default function UploadPage() {
           disabled={!slots[0].file || isAnalyzing}
           className="w-full mt-8 py-4 bg-violet-600 text-white text-lg font-semibold rounded-xl hover:bg-violet-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
         >
-          {isAnalyzing ? 'Analyzing photos...' : 'Continue'}
+          {isAnalyzing ? (
+            <span className="flex items-center justify-center gap-2">
+              <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              Analyzing photos with AI...
+            </span>
+          ) : (
+            'Continue'
+          )}
         </button>
       </div>
     </main>

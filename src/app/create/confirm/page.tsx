@@ -64,6 +64,7 @@ export default function ConfirmPage() {
             <div key={member.role} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
               <div className="flex items-center gap-3 mb-4">
                 {member.photoUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={member.photoUrl}
                     alt={roleLabels[member.role]}

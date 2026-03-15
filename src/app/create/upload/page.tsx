@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import StepIndicator from '../../components/StepIndicator';
 import { createSession, getSession, updateSession } from '../../lib/store';
+import { compressImage } from '../../lib/image-utils';
 
 interface UploadSlot {
   role: 'child' | 'parent1' | 'parent2';
@@ -52,8 +53,10 @@ export default function UploadPage() {
       const slotsWithFiles = slots.filter((s) => s.file);
       const members = await Promise.all(
         slotsWithFiles.map(async (slot) => {
+          // Compress image before sending (Vercel has 4.5MB body limit)
+          const compressed = await compressImage(slot.file!);
           const formData = new FormData();
-          formData.append('photo', slot.file!);
+          formData.append('photo', compressed);
           formData.append('role', slot.role);
 
           const res = await fetch('/api/analyze-photo', {
@@ -62,7 +65,8 @@ export default function UploadPage() {
           });
 
           if (!res.ok) {
-            throw new Error(`Failed to analyze ${slot.label} photo`);
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || `Failed to analyze ${slot.label} photo`);
           }
 
           const data = await res.json();
@@ -79,7 +83,8 @@ export default function UploadPage() {
       router.push('/create/confirm');
     } catch (err) {
       console.error('Photo analysis error:', err);
-      setError('Something went wrong analyzing the photos. Please try again.');
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setError(`Something went wrong: ${msg}`);
     } finally {
       setIsAnalyzing(false);
     }

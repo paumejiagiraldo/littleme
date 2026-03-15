@@ -57,9 +57,12 @@ Return ONLY the JSON, no markdown, no explanation.`,
     );
 
     if (!response.ok) {
-      const error = await response.text();
-      console.error('Gemini API error:', error);
-      return NextResponse.json({ error: 'Failed to analyze photo' }, { status: 500 });
+      const errorText = await response.text();
+      console.error('Gemini API error:', response.status, errorText);
+      return NextResponse.json(
+        { error: `Gemini API error (${response.status}): ${errorText.slice(0, 200)}` },
+        { status: 500 }
+      );
     }
 
     const data = await response.json();
